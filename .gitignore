@@ -1,0 +1,59 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.idea/
+*.egg-info/
+dist/
+build/
+
+# SQLite database
+*.db
+*.sqlite3
+
+# PyCharm project files
+.idea/
+
+# VS Code project files (optional, in case someone uses it)
+.vscode/
+
+# Test coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# Pytest cache
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Logs
+*.log
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Environment variable files
+.env
+.env.*
+
+# Local secrets or config overrides
+*.local.*
+secrets/
+
+# FastAPI docs cache (if any)
+__pydantic__/  # Pydantic v2 cache
