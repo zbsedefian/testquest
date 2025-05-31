@@ -49,3 +49,8 @@ class StudentTestAssignment(SQLModel, table=True):
     score: Optional[float] = None  # could be percent or points
     started: bool = Field(default=False)
     finished: bool = Field(default=False)
+
+class TestTeacherAssignment(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    test_id: int = Field(foreign_key="test.id")
+    teacher_id: int = Field(foreign_key="user.id")

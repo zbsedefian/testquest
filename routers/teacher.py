@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 from database import get_session
 from dependencies import get_current_user
-from models import TeacherStudent, User, TestResult, Test
+from models import TeacherStudent, User, TestResult, Test, StudentTestAssignment
 from typing import List
 
 
@@ -15,6 +15,10 @@ class TestResultOut(BaseModel):
     score: int
     completed_at: str
     test_name: str
+
+class StudentTestAssignmentCreate(BaseModel):
+    test_id: int
+    student_id: int
 
 router = APIRouter(prefix="/teacher", tags=["teacher"])
 
@@ -63,3 +67,26 @@ def get_student_results(
         }
         for r in results
     ]
+
+def teacher_required(user=Depends(get_current_user)):
+    if user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only")
+    return user
+
+@router.post("/assign-test-to-student", response_model=StudentTestAssignment)
+def assign_test_to_student(data: StudentTestAssignmentCreate, session: Session = Depends(get_session), current_user=Depends(teacher_required)):
+    # Verify teacher is assigned to student
+    assignment = session.exec(
+        select(TeacherStudent)
+        .where(TeacherStudent.teacher_id == current_user.id)
+        .where(TeacherStudent.student_id == data.student_id)
+    ).first()
+
+    if not assignment:
+        raise HTTPException(status_code=403, detail="Not authorized to view this student's data")
+
+    assignment = StudentTestAssignment(test_id=data.test_id, student_id=data.student_id)
+    session.add(assignment)
+    session.commit()
+    session.refresh(assignment)
+    return assignment
