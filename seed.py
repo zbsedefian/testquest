@@ -29,6 +29,7 @@ with Session(engine) as session:
 
     q1 = Question(
         test_id=test.id,
+        order=1,
         question_text="What is 2 + 2?",
         choices='{ "A": "3", "B": "4", "C": "5", "D": "6" }',
         correct_choice="B",
@@ -36,6 +37,7 @@ with Session(engine) as session:
     )
     q2 = Question(
         test_id=test.id,
+        order=2,
         question_text="Which is a prime number?",
         choices='{ "A": "4", "B": "6", "C": "7", "D": "9" }',
         correct_choice="C",

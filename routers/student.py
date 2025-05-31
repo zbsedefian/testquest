@@ -14,7 +14,6 @@ class AnswerRequest(BaseModel):
     selected_choice: str
 
 class TestSubmitRequest(BaseModel):
-    student_id: int
     test_id: int
     answers: List[AnswerRequest]
 
@@ -39,27 +38,47 @@ def get_assigned_tests(
 
 @router.get("/test/{test_id}", response_model=List[Question])
 def get_test_questions(test_id: int, session: Session = Depends(get_session)):
-    return session.exec(select(Question).where(Question.test_id == test_id)).all()
+    questions = session.exec(
+        select(Question).where(Question.test_id == test_id).order_by(Question.order)
+    ).all()
+    return questions
 
 @router.post("/submit")
-def submit_test(data: TestSubmitRequest, session: Session = Depends(get_session)):
+def submit_test(
+    data: TestSubmitRequest,
+    session: Session = Depends(get_session),
+    current_user=Depends(get_current_user)
+):
+    # prevent re-submission
+    existing = session.exec(
+        select(TestResult).where(
+            TestResult.student_id == current_user.id,
+            TestResult.test_id == data.test_id
+        )
+    ).first()
+    # if existing:
+    #     raise HTTPException(status_code=400, detail="Test already submitted.")
+
     score = 0
     for ans in data.answers:
         question = session.get(Question, ans.question_id)
+        if not question:
+            raise HTTPException(status_code=400, detail=f"Question ID {ans.question_id} not found.")
         is_correct = question.correct_choice == ans.selected_choice
         if is_correct:
             score += 1
         session.add(StudentAnswer(
-            student_id=data.student_id,
+            student_id=current_user.id,
             question_id=ans.question_id,
             selected_choice=ans.selected_choice,
             is_correct=is_correct
         ))
 
     session.add(TestResult(
-        student_id=data.student_id,
+        student_id=current_user.id,
         test_id=data.test_id,
         score=score
     ))
     session.commit()
     return {"score": score}
+

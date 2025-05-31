@@ -17,6 +17,7 @@ class Test(SQLModel, table=True):
 class Question(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     test_id: int = Field(foreign_key="test.id")
+    order: int = Field(default=0)  # question order within the test
     question_text: str
     choices: str  # JSON string of choices A-D
     correct_choice: str
