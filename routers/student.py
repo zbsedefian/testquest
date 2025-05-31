@@ -1,13 +1,26 @@
 # testquest/routers/student.py
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from dependencies import get_current_user
 from database import get_session
 from models import Test, Question, StudentAnswer, TestResult, User, StudentTestAssignment
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 router = APIRouter(prefix="/student", tags=["student"])
+
+class TestResultWithName(BaseModel):
+    id: int
+    test_id: int
+    student_id: int
+    score: int
+    completed_at: Optional[str]
+    test_name: str
+
+    class Config:
+        orm_mode = True
 
 class AnswerRequest(BaseModel):
     question_id: int
@@ -24,7 +37,6 @@ def get_assigned_tests(
 ):
     if current_user.role != "student" and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only students or admins allowed")
-    print("Current user:", current_user)
     assignments = session.exec(
         select(StudentTestAssignment).where(StudentTestAssignment.student_id == current_user.id)
     ).all()
@@ -42,6 +54,30 @@ def get_test_questions(test_id: int, session: Session = Depends(get_session)):
         select(Question).where(Question.test_id == test_id).order_by(Question.order)
     ).all()
     return questions
+
+@router.get("/test-results", response_model=List[TestResultWithName])
+def get_test_results(
+    current_user=Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    results = session.exec(
+        select(TestResult, Test.name)
+        .join(Test, TestResult.test_id == Test.id)
+        .where(TestResult.student_id == current_user.id)
+        .order_by(TestResult.id)
+    ).all()
+
+    return [
+        TestResultWithName(
+            id=result.TestResult.id,
+            test_id=result.TestResult.test_id,
+            student_id=result.TestResult.student_id,
+            score=result.TestResult.score,
+            completed_at=result.TestResult.completed_at,
+            test_name=result.name,
+        )
+        for result in results
+    ]
 
 @router.post("/submit")
 def submit_test(
@@ -77,7 +113,8 @@ def submit_test(
     session.add(TestResult(
         student_id=current_user.id,
         test_id=data.test_id,
-        score=score
+        score=score,
+        completed_at=datetime.now()
     ))
     session.commit()
     return {"score": score}

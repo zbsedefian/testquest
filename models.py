@@ -41,7 +41,6 @@ class TeacherStudent(SQLModel, table=True):
     teacher_id: int = Field(foreign_key="user.id", primary_key=True)
     student_id: int = Field(foreign_key="user.id", primary_key=True)
 
-
 class StudentTestAssignment(SQLModel, table=True):
     student_id: int = Field(foreign_key="user.id", primary_key=True)
     test_id: int = Field(foreign_key="test.id", primary_key=True)
