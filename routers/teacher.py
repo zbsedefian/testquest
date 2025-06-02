@@ -133,7 +133,6 @@ def assign_test_to_student(student_id: int, test_id: int, session: Session = Dep
     return {"message": "Test assigned successfully"}
 
 
-
 def get_current_teacher(
     x_user_id: Optional[int] = Header(None),
     session: Session = Depends(get_session),
@@ -144,6 +143,7 @@ def get_current_teacher(
     if not teacher or teacher.role != "teacher":
         raise HTTPException(status_code=403, detail="Unauthorized")
     return teacher
+
 
 @router.get("/students", response_model=List[User])
 def get_assigned_students(
@@ -158,7 +158,6 @@ def get_assigned_students(
     )
     students = session.exec(stmt).all()
     return students
-
 
 
 @router.get("/tests", response_model=List[Test])
