@@ -2,10 +2,12 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import delete
 from sqlmodel import Session, select
 from dependencies import get_current_user
 from database import get_session
-from models import Test, Question, StudentAnswer, TestResult, User, StudentTestAssignment
+from models import Test, Question, StudentAnswer, TestResult, User, StudentTestAssignment, ClassroomStudentLink, \
+    Classroom
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -118,4 +120,31 @@ def submit_test(
     ))
     session.commit()
     return {"score": score}
+
+
+@router.post("/{student_id}/classrooms")
+def set_student_classrooms(
+    student_id: int,
+    payload: List[int],  # list of classroom IDs
+    session: Session = Depends(get_session)
+):
+    # Remove existing links
+    session.exec(
+        delete(ClassroomStudentLink).where(ClassroomStudentLink.student_id == student_id)
+    )
+    # Add new links
+    for cls_id in payload:
+        session.add(ClassroomStudentLink(classroom_id=cls_id, student_id=student_id))
+    session.commit()
+    return {"message": "Updated student classrooms"}
+
+
+@router.get("/{student_id}/classrooms")
+def get_student_classrooms(student_id: int, session: Session = Depends(get_session)):
+    statement = (
+        select(Classroom)
+        .join(ClassroomStudentLink)
+        .where(ClassroomStudentLink.student_id == student_id)
+    )
+    return session.exec(statement).all()
 

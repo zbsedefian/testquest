@@ -54,3 +54,12 @@ class TestTeacherAssignment(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     test_id: int = Field(foreign_key="test.id")
     teacher_id: int = Field(foreign_key="user.id")
+
+class Classroom(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    teacher_id: int = Field(foreign_key="user.id")  # assuming user has role-based identification
+
+class ClassroomStudentLink(SQLModel, table=True):
+    classroom_id: int = Field(foreign_key="classroom.id", primary_key=True)
+    student_id: int = Field(foreign_key="user.id", primary_key=True)

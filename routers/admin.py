@@ -70,8 +70,14 @@ def get_users(
     role: Optional[str] = None,
     search: Optional[str] = None,
     session: Session = Depends(get_session),
-    current_user: User = Depends(admin_required),
+    user: User = Depends(get_current_user),
 ):
+    if user.role == "teacher" and role != "student":
+        raise HTTPException(status_code=403, detail="Admins only")
+
+    if user.role == "student":
+        raise HTTPException(status_code=403, detail="Admins only")
+
     filters = []
     if role:
         filters.append(User.role == role)
@@ -98,8 +104,14 @@ def get_users(
 def create_user(
     data: UserCreate,
     session: Session = Depends(get_session),
-    current_user: User = Depends(admin_required)
+    user: User = Depends(get_current_user)
 ):
+    if user.role == "teacher" and data.role != "student":
+        raise HTTPException(status_code=403, detail="Admins only")
+
+    if user.role == "student":
+        raise HTTPException(status_code=403, detail="Admins only")
+
     user = User(username=data.username, password=data.password, role=data.role)
     session.add(user)
     session.commit()
