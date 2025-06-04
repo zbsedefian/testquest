@@ -7,15 +7,11 @@ from dependencies import get_current_user
 from models import TeacherStudent, User, TestResult, Test, StudentTestAssignment, Question, ClassroomStudentLink
 from typing import List, Optional
 
-
 class TestAssignmentRequest(BaseModel):
     student_id: int
     test_id: int
 
 
-class TestClassroomAssignmentRequest(BaseModel):
-    classroom_id: int
-    test_id: int
 
 
 class TestResultOut(BaseModel):
@@ -79,13 +75,12 @@ def get_student_results(
     ]
 
 def teacher_required(user=Depends(get_current_user)):
+    print(user.role)
     if user.role not in ["teacher", "admin"]:
         raise HTTPException(status_code=403, detail="Teachers or admin only")
     return user
 
 
-from fastapi import HTTPException
-from sqlmodel import select
 
 @router.post("/assign-test")
 def assign_test_to_student(
@@ -121,46 +116,6 @@ def assign_test_to_student(
     return {"message": "Test assigned successfully"}
 
 
-@router.post("/assign-test-to-classroom")
-def assign_test_to_classroom(
-    data: TestClassroomAssignmentRequest,
-    session: Session = Depends(get_session),
-    user: User = Depends(teacher_required)
-):
-    # Verify that classroom belongs to this teacher
-    classroom = session.exec(
-        select(ClassroomStudentLink)
-        .where(ClassroomStudentLink.classroom_id == data.classroom_id)
-    ).first()
-    if not classroom:
-        raise HTTPException(status_code=404, detail="Classroom not found")
-
-    # Fetch student IDs in that classroom
-    student_links = session.exec(
-        select(ClassroomStudentLink).where(ClassroomStudentLink.classroom_id == data.classroom_id)
-    ).all()
-
-    student_ids = [link.student_id for link in student_links]
-
-    count = 0
-    for student_id in student_ids:
-        exists = session.exec(
-            select(StudentTestAssignment)
-            .where(StudentTestAssignment.student_id == student_id)
-            .where(StudentTestAssignment.test_id == data.test_id)
-        ).first()
-        if not exists:
-            assignment = StudentTestAssignment(
-                student_id=student_id,
-                test_id=data.test_id
-            )
-            session.add(assignment)
-            count += 1
-
-    session.commit()
-    return {"message": f"Test assigned to {count} student(s) in classroom."}
-
-
 # Create a test
 @router.post("/tests", response_model=Test)
 def create_test(test: Test, session: Session = Depends(get_session), user: User = Depends(teacher_required)):
@@ -192,7 +147,7 @@ def get_current_teacher(
     if x_user_id is None:
         raise HTTPException(status_code=401, detail="Missing x-user-id header")
     teacher = session.get(User, x_user_id)
-    if not teacher or teacher.role != "teacher":
+    if not teacher or teacher.role != "teacher" or teacher.role != "admin":
         raise HTTPException(status_code=403, detail="Unauthorized")
     return teacher
 
@@ -211,11 +166,3 @@ def get_assigned_students(
     students = session.exec(stmt).all()
     return students
 
-
-@router.get("/tests", response_model=List[Test])
-def get_created_tests(
-    teacher: User = Depends(get_current_teacher),
-    session: Session = Depends(get_session),
-):
-    tests = session.exec(select(Test).where(Test.created_by == teacher.id)).all()
-    return tests

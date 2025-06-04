@@ -1,12 +1,16 @@
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, Body
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlmodel import Session, select
-from database import get_session
-from models import User, TeacherStudent, TestTeacherAssignment, Test
-from typing import List, Optional
-from dependencies import get_current_user
+from starlette import status
 
-from pydantic import BaseModel
+from database import get_session
+from dependencies import get_current_user
+from models import User, TeacherStudent, TestTeacherAssignment, Test, ClassroomStudentLink, ClassroomTeacherLink, \
+    Classroom
+
 
 class UserCreate(BaseModel):
     username: str
@@ -61,6 +65,14 @@ def list_tests(
 ):
     tests = session.exec(select(Test)).all()
     return tests
+
+
+@router.get("/users/all", response_model=List[User])
+def get_all_users(
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_required),
+):
+    return session.exec(select(User)).all()
 
 
 @router.get("/users", response_model=PaginatedUsers)
@@ -218,3 +230,78 @@ def get_related_users(
         result.teacher = teacher
 
     return result
+
+
+
+@router.post("/assign-teachers-to-classroom")
+def assign_teachers_to_classroom(
+    payload: dict,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can assign teachers")
+
+    teacher_ids = payload.get("teacher_ids", [])
+    classroom_id = payload.get("classroom_id")
+
+    if not teacher_ids or not classroom_id:
+        raise HTTPException(status_code=400, detail="Missing teacher_ids or classroom_id")
+
+    existing_links = session.exec(
+        select(ClassroomTeacherLink).where(
+            ClassroomTeacherLink.classroom_id == classroom_id,
+            ClassroomTeacherLink.teacher_id.in_(teacher_ids)
+        )
+    ).all()
+    existing_ids = {link.teacher_id for link in existing_links}
+
+    new_links = [
+        ClassroomTeacherLink(classroom_id=classroom_id, teacher_id=tid)
+        for tid in teacher_ids if tid not in existing_ids
+    ]
+
+    if not new_links:
+        raise HTTPException(status_code=400, detail="All teachers already assigned")
+
+    session.add_all(new_links)
+    session.commit()
+    return {"message": f"{len(new_links)} teacher(s) assigned successfully"}
+
+
+@router.post("/assign-students-to-classroom")
+def assign_students_to_classroom(
+    payload: dict,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can assign students")
+
+    student_ids = payload.get("student_ids", [])
+    classroom_id = payload.get("classroom_id")
+
+    if not student_ids or not classroom_id:
+        raise HTTPException(status_code=400, detail="Missing student_ids or classroom_id")
+
+    existing_links = session.exec(
+        select(ClassroomStudentLink).where(
+            ClassroomStudentLink.classroom_id == classroom_id,
+            ClassroomStudentLink.student_id.in_(student_ids)
+        )
+    ).all()
+    existing_ids = {link.student_id for link in existing_links}
+
+    new_links = [
+        ClassroomStudentLink(classroom_id=classroom_id, student_id=sid)
+        for sid in student_ids if sid not in existing_ids
+    ]
+
+    if not new_links:
+        raise HTTPException(status_code=400, detail="All students already assigned")
+
+    session.add_all(new_links)
+    session.commit()
+    return {"message": f"{len(new_links)} students assigned successfully"}
+
+

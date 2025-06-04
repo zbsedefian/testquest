@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from dependencies import get_current_user
 from database import get_session
 from models import Test, Question, StudentAnswer, TestResult, User, StudentTestAssignment, ClassroomStudentLink, \
-    Classroom
+    Classroom, ClassroomTestAssignment
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -32,23 +32,46 @@ class TestSubmitRequest(BaseModel):
     test_id: int
     answers: List[AnswerRequest]
 
+
 @router.get("/tests", response_model=List[Test])
 def get_assigned_tests(
-        current_user=Depends(get_current_user),
-        session: Session = Depends(get_session),
+    current_user=Depends(get_current_user),
+    session: Session = Depends(get_session),
 ):
-    if current_user.role != "student" and current_user.role != "admin":
+    if current_user.role not in {"student", "admin"}:
         raise HTTPException(status_code=403, detail="Only students or admins allowed")
-    assignments = session.exec(
-        select(StudentTestAssignment).where(StudentTestAssignment.student_id == current_user.id)
+
+    # Get test IDs directly assigned to student
+    direct_assignments = session.exec(
+        select(StudentTestAssignment.test_id).where(StudentTestAssignment.student_id == current_user.id)
     ).all()
+    direct_test_ids = set(direct_assignments)
 
-    test_ids = [assignment.test_id for assignment in assignments]
-    if not test_ids:
-        return []  # no tests assigned
+    # Get classroom IDs for this student
+    classroom_links = session.exec(
+        select(ClassroomStudentLink.classroom_id).where(ClassroomStudentLink.student_id == current_user.id)
+    ).all()
+    classroom_ids = classroom_links  # Already a list of ints
 
-    tests = session.exec(select(Test).where(Test.id.in_(test_ids))).all()
+    # Get test IDs assigned to those classrooms
+    if classroom_ids:
+        classroom_assignments = session.exec(
+            select(ClassroomTestAssignment.test_id).where(ClassroomTestAssignment.classroom_id.in_(classroom_ids))
+        ).all()
+        classroom_test_ids = set(classroom_assignments)
+    else:
+        classroom_test_ids = set()
+
+    # Combine both sources of test assignments
+    all_test_ids = list(direct_test_ids.union(classroom_test_ids))
+
+    if not all_test_ids:
+        return []
+
+    tests = session.exec(select(Test).where(Test.id.in_(all_test_ids))).all()
     return tests
+
+
 
 @router.get("/test/{test_id}", response_model=List[Question])
 def get_test_questions(test_id: int, session: Session = Depends(get_session)):
