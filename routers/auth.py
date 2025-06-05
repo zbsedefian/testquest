@@ -42,3 +42,29 @@ def login(data: LoginRequest, session: Session = Depends(get_session)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     return LoginResponse(id=user.id, username=user.username, role=user.role)
+
+
+
+class SignupRequest(BaseModel):
+    username: str
+    password: str
+    role: str  # "student", "teacher", or "admin"
+
+class SignupResponse(BaseModel):
+    id: int
+    username: str
+    role: str
+
+@router.post("/signup", response_model=SignupResponse)
+def signup(data: SignupRequest, session: Session = Depends(get_session)):
+    # Check if username is already taken
+    existing_user = session.exec(select(User).where(User.username == data.username)).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    new_user = User(username=data.username, password=data.password, role=data.role)
+    session.add(new_user)
+    session.commit()
+    session.refresh(new_user)
+
+    return SignupResponse(id=new_user.id, username=new_user.username, role=new_user.role)

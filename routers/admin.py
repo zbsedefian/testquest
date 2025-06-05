@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Path, Body
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlmodel import Session, select
-from starlette import status
 
 from database import get_session
 from dependencies import get_current_user

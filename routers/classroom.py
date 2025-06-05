@@ -62,6 +62,71 @@ def create_classroom(
     return classroom
 
 
+@router.put("/classrooms/{classroom_id}")
+def update_classroom(
+    classroom_id: int,
+    payload: ClassroomCreate,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    if user.role not in {"admin", "teacher"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins or teachers can update classrooms"
+        )
+
+    classroom = session.get(Classroom, classroom_id)
+    if not classroom:
+        raise HTTPException(status_code=404, detail="Classroom not found")
+
+    classroom.name = payload.classroom_name
+    session.add(classroom)
+    session.query(ClassroomTeacherLink).filter_by(classroom_id=classroom.id).delete()
+    session.query(ClassroomStudentLink).filter_by(classroom_id=classroom.id).delete()
+
+    teacher_links = [
+        ClassroomTeacherLink(classroom_id=classroom.id, teacher_id=tid)
+        for tid in payload.teacher_ids
+    ]
+    student_links = [
+        ClassroomStudentLink(classroom_id=classroom.id, student_id=sid)
+        for sid in payload.student_ids
+    ]
+
+    session.add_all(teacher_links + student_links)
+    session.commit()
+
+    return classroom
+
+
+@router.delete("/classrooms/{classroom_id}")
+def delete_classroom(
+    classroom_id: int,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    if user.role not in {"admin", "teacher"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins or teachers can delete classrooms"
+        )
+
+    classroom = session.get(Classroom, classroom_id)
+    if not classroom:
+        raise HTTPException(status_code=404, detail="Classroom not found")
+
+    # Delete relationships first to maintain referential integrity
+    session.query(ClassroomTeacherLink).filter_by(classroom_id=classroom_id).delete()
+    session.query(ClassroomStudentLink).filter_by(classroom_id=classroom_id).delete()
+    session.query(ClassroomTestAssignment).filter_by(classroom_id=classroom_id).delete()
+
+    # Then delete the classroom itself
+    session.delete(classroom)
+    session.commit()
+
+    return {"message": "Classroom deleted successfully"}
+
+
 @router.get("/classrooms")
 def get_classrooms(
     session: Session = Depends(get_session),
