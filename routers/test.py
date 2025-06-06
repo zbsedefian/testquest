@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from dependencies import get_current_user
 from models import Classroom, ClassroomStudentLink, User, Test, ClassroomTeacherLink, \
-    ClassroomTestAssignment, Question
+    ClassroomTestAssignment, Question, TestResult
 from database import get_session
 from routers.teacher import TestCreate
 
@@ -156,3 +156,30 @@ def unassign_test(data: TestClassroomAssignmentRequest, session: Session = Depen
     )
     session.commit()
     return {"message": "Unassigned successfully"}
+
+
+class RankedResult(BaseModel):
+    student_id: int
+    username: str
+    score: float
+
+
+@router.get("/test/{test_id}/rankings", response_model=List[RankedResult])
+def get_test_rankings(test_id: int, session: Session = Depends(get_session), current_user=Depends(get_current_user)):
+    if current_user.role not in {"teacher", "admin"}:
+        raise HTTPException(status_code=403, detail="Only teachers or admins can view rankings.")
+
+    statement = (
+        select(TestResult, User.username)
+        .join(User, User.id == TestResult.student_id)
+        .where(TestResult.test_id == test_id)
+        .order_by(TestResult.score.desc())
+    )
+
+    results = session.exec(statement).all()
+
+    rankings = [
+        RankedResult(student_id=result.TestResult.student_id, username=result.username, score=result.TestResult.score)
+        for result in results
+    ]
+    return rankings
