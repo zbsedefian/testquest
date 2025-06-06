@@ -220,3 +220,135 @@ def get_classroom_tests(
 
     tests = session.exec(select(Test).where(Test.id.in_(test_ids))).all()
     return tests
+
+
+@router.post("/assign-teachers-to-classroom")
+def assign_teachers_to_classroom(
+    payload: dict,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can assign teachers")
+
+    teacher_ids = payload.get("teacher_ids", [])
+    classroom_id = payload.get("classroom_id")
+
+    if not teacher_ids or not classroom_id:
+        raise HTTPException(status_code=400, detail="Missing teacher_ids or classroom_id")
+
+    existing_links = session.exec(
+        select(ClassroomTeacherLink).where(
+            ClassroomTeacherLink.classroom_id == classroom_id,
+            ClassroomTeacherLink.teacher_id.in_(teacher_ids)
+        )
+    ).all()
+    existing_ids = {link.teacher_id for link in existing_links}
+
+    new_links = [
+        ClassroomTeacherLink(classroom_id=classroom_id, teacher_id=tid)
+        for tid in teacher_ids if tid not in existing_ids
+    ]
+
+    if not new_links:
+        raise HTTPException(status_code=400, detail="All teachers already assigned")
+
+    session.add_all(new_links)
+    session.commit()
+    return {"message": f"{len(new_links)} teacher(s) assigned successfully"}
+
+
+@router.post("/assign-students-to-classroom")
+def assign_students_to_classroom(
+    payload: dict,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can assign students")
+
+    student_ids = payload.get("student_ids", [])
+    classroom_id = payload.get("classroom_id")
+
+    if not student_ids or not classroom_id:
+        raise HTTPException(status_code=400, detail="Missing student_ids or classroom_id")
+
+    existing_links = session.exec(
+        select(ClassroomStudentLink).where(
+            ClassroomStudentLink.classroom_id == classroom_id,
+            ClassroomStudentLink.student_id.in_(student_ids)
+        )
+    ).all()
+    existing_ids = {link.student_id for link in existing_links}
+
+    new_links = [
+        ClassroomStudentLink(classroom_id=classroom_id, student_id=sid)
+        for sid in student_ids if sid not in existing_ids
+    ]
+
+    if not new_links:
+        raise HTTPException(status_code=400, detail="All students already assigned")
+
+    session.add_all(new_links)
+    session.commit()
+    return {"message": f"{len(new_links)} students assigned successfully"}
+
+
+
+@router.get("/classrooms-with-users")
+def get_classrooms_with_users(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user)
+):
+    if user.role != "admin":
+        return []
+
+    classrooms = session.exec(select(Classroom)).all()
+    classroom_data = []
+
+    for cls in classrooms:
+        # Get assigned teachers
+        teacher_links = session.exec(
+            select(ClassroomTeacherLink).where(ClassroomTeacherLink.classroom_id == cls.id)
+        ).all()
+        teacher_ids = [link.teacher_id for link in teacher_links]
+        teachers = session.exec(select(User).where(User.id.in_(teacher_ids))).all()
+
+        # Get first 5 students and count
+        student_links = session.exec(
+            select(ClassroomStudentLink).where(ClassroomStudentLink.classroom_id == cls.id)
+        ).all()
+        student_ids = [link.student_id for link in student_links]
+        students = session.exec(select(User).where(User.id.in_(student_ids))).all()
+        preview_students = students[:5]
+
+        classroom_data.append({
+            "id": cls.id,
+            "name": cls.name,
+            "teachers": [{"id": t.id, "username": t.username} for t in teachers],
+            "students": [{"id": s.id, "username": s.username} for s in preview_students],
+            "total_students": len(students)
+        })
+
+    return classroom_data
+
+
+@router.get("/classrooms/{classroom_id}/students")
+def get_students_for_classroom(
+    classroom_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user)
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    links = session.exec(
+        select(ClassroomStudentLink).where(ClassroomStudentLink.classroom_id == classroom_id)
+    ).all()
+    student_ids = [link.student_id for link in links]
+
+    students = session.exec(
+        select(User).where(User.id.in_(student_ids))
+    ).all()
+
+    return [{"id": s.id, "username": s.username} for s in students]

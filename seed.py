@@ -1,38 +1,109 @@
-# testquest/seed.py
+from datetime import datetime, timedelta
+
 from sqlmodel import Session
 from database import engine
-from models import User, TeacherStudent, Test, Question, StudentTestAssignment
+from models import (
+    User,
+    Classroom,
+    ClassroomStudentLink,
+    ClassroomTeacherLink,
+    ClassroomTestAssignment,
+    Test,
+    Question,
+)
 
 print("Seeding database...")
 
 with Session(engine) as session:
-    # Users
+    # Create Users
     admin = User(username="admin", password="password", role="admin")
     teacher = User(username="teacher", password="password", role="teacher")
-    student = User(username="student1", password="password", role="student")
+    student1 = User(username="student1", password="password", role="student")
     student2 = User(username="student2", password="password", role="student")
-    session.add_all([admin, teacher, student, student2])
+    session.add_all([admin, teacher, student1, student2])
     session.commit()
 
-    # Link teacher to students
+    # Create a classroom
+    classroom = Classroom(name="SHSAT Prep Class")
+    session.add(classroom)
+    session.commit()
+
+    # Link teacher and students to the classroom
+    session.add(ClassroomTeacherLink(classroom_id=classroom.id, teacher_id=teacher.id))
     session.add_all([
-        TeacherStudent(teacher_id=teacher.id, student_id=student.id),
-        TeacherStudent(teacher_id=teacher.id, student_id=student2.id),
+        ClassroomStudentLink(classroom_id=classroom.id, student_id=student1.id),
+        ClassroomStudentLink(classroom_id=classroom.id, student_id=student2.id),
     ])
     session.commit()
 
-    # Test 1
-    test1 = Test(name="Practice SHSAT 1", created_by=teacher.id)
-    session.add(test1)
+    # Create tests
+    now = datetime.utcnow()
+    next_month = now + timedelta(days=30)
+
+    test1 = Test(
+        name="Practice SHSAT 1",
+        description="This is the first SHSAT practice test.",
+        created_by=teacher.id,
+        is_timed=True,
+        duration_minutes=60,
+        max_attempts=3,
+        available_from=now,
+        available_until=next_month,
+        is_published=True,
+        show_results_immediately=True,
+        allow_back_navigation=True,
+        shuffle_questions=False,
+        pass_score=70.0,
+        graded_by="auto"
+    )
+
+    test2 = Test(
+        name="Practice SHSAT 2",
+        description="Second in the SHSAT practice series.",
+        created_by=teacher.id,
+        is_timed=True,
+        duration_minutes=75,
+        max_attempts=2,
+        available_from=now,
+        available_until=next_month,
+        is_published=False,
+        show_results_immediately=False,
+        allow_back_navigation=False,
+        shuffle_questions=True,
+        pass_score=75.0,
+        graded_by="manual"
+    )
+
+    test3 = Test(
+        name="Practice SHSAT 3",
+        description="Final SHSAT practice test for review.",
+        created_by=teacher.id,
+        is_timed=False,
+        duration_minutes=None,
+        max_attempts=5,
+        available_from=None,
+        available_until=None,
+        is_published=True,
+        show_results_immediately=True,
+        allow_back_navigation=True,
+        shuffle_questions=False,
+        pass_score=65.0,
+        graded_by="auto"
+    )
+    session.add_all([test1, test2, test3])
     session.commit()
 
+    # Assign tests to the classroom
     session.add_all([
-        StudentTestAssignment(student_id=student.id, test_id=test1.id),
-        StudentTestAssignment(student_id=student2.id, test_id=test1.id),
+        ClassroomTestAssignment(classroom_id=classroom.id, test_id=test1.id),
+        ClassroomTestAssignment(classroom_id=classroom.id, test_id=test2.id),
+        ClassroomTestAssignment(classroom_id=classroom.id, test_id=test3.id),
     ])
     session.commit()
 
-    questions1 = [
+    # Add questions for all tests (you can reuse the `questions1`, `questions2`, `questions3` lists from your original script)
+    # Example for test1 only:
+    session.add_all([
         Question(
             test_id=test1.id,
             order=1,
@@ -49,18 +120,6 @@ with Session(engine) as session:
             correct_choice="C",
             explanation='A prime number has exactly two distinct positive divisors: $1$ and itself.\\$7$ is only divisible by $1$ and $7$.\\So the correct answer is C.'
         ),
-    ]
-    session.add_all(questions1)
-    session.commit()
-
-    # Test 2
-    test2 = Test(name="Practice SHSAT 2", created_by=teacher.id)
-    session.add(test2)
-    session.commit()
-
-    session.add_all([
-        StudentTestAssignment(student_id=student.id, test_id=test2.id),
-        StudentTestAssignment(student_id=student2.id, test_id=test2.id),
     ])
     session.commit()
 
@@ -94,16 +153,6 @@ with Session(engine) as session:
     ]
 
     session.add_all(questions2)
-    session.commit()
-
-    test3 = Test(name="Practice SHSAT 3", created_by=teacher.id)
-    session.add(test3)
-    session.commit()
-
-    session.add_all([
-        StudentTestAssignment(student_id=student.id, test_id=test3.id),
-        StudentTestAssignment(student_id=student2.id, test_id=test3.id),
-    ])
     session.commit()
 
     questions3 = [

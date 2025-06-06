@@ -1,4 +1,3 @@
-# testquest/routers/student.py
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,7 +5,7 @@ from sqlalchemy import delete
 from sqlmodel import Session, select
 from dependencies import get_current_user
 from database import get_session
-from models import Test, Question, StudentAnswer, TestResult, User, StudentTestAssignment, ClassroomStudentLink, \
+from models import Test, Question, StudentAnswer, TestResult, User, ClassroomStudentLink, \
     Classroom, ClassroomTestAssignment
 from pydantic import BaseModel
 from typing import List, Optional
@@ -41,12 +40,6 @@ def get_assigned_tests(
     if current_user.role not in {"student", "admin"}:
         raise HTTPException(status_code=403, detail="Only students or admins allowed")
 
-    # Get test IDs directly assigned to student
-    direct_assignments = session.exec(
-        select(StudentTestAssignment.test_id).where(StudentTestAssignment.student_id == current_user.id)
-    ).all()
-    direct_test_ids = set(direct_assignments)
-
     # Get classroom IDs for this student
     classroom_links = session.exec(
         select(ClassroomStudentLink.classroom_id).where(ClassroomStudentLink.student_id == current_user.id)
@@ -62,23 +55,25 @@ def get_assigned_tests(
     else:
         classroom_test_ids = set()
 
-    # Combine both sources of test assignments
-    all_test_ids = list(direct_test_ids.union(classroom_test_ids))
-
-    if not all_test_ids:
+    if not classroom_test_ids:
         return []
 
-    tests = session.exec(select(Test).where(Test.id.in_(all_test_ids))).all()
+    tests = session.exec(select(Test).where(Test.id.in_(classroom_test_ids))).all()
     return tests
 
+
+@router.get("/test/{test_id}/meta")
+def get_test_meta(test_id: int, session: Session = Depends(get_session)):
+    test = session.get(Test, test_id)
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    return test
 
 
 @router.get("/test/{test_id}", response_model=List[Question])
 def get_test_questions(test_id: int, session: Session = Depends(get_session)):
-    questions = session.exec(
-        select(Question).where(Question.test_id == test_id).order_by(Question.order)
-    ).all()
-    return questions
+    statement = select(Question).where(Question.test_id == test_id).order_by(Question.order)
+    return session.exec(statement).all()
 
 @router.get("/test-results", response_model=List[TestResultWithName])
 def get_test_results(
@@ -110,16 +105,20 @@ def submit_test(
     session: Session = Depends(get_session),
     current_user=Depends(get_current_user)
 ):
-    # prevent re-submission
-    existing = session.exec(
+    test = session.get(Test, data.test_id)
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found.")
+
+    existing_attempts = session.exec(
         select(TestResult).where(
             TestResult.student_id == current_user.id,
             TestResult.test_id == data.test_id
         )
-    ).first()
-    # if existing:
-    #     raise HTTPException(status_code=400, detail="Test already submitted.")
+    ).all()
 
+    attempt_number = len(existing_attempts) + 1
+
+    # Grade the test
     score = 0
     for ans in data.answers:
         question = session.get(Question, ans.question_id)
@@ -135,14 +134,21 @@ def submit_test(
             is_correct=is_correct
         ))
 
+    # Final score as percentage
+    percentage_score = round((score / len(data.answers)) * 100)
+
+    # Save test result
     session.add(TestResult(
         student_id=current_user.id,
         test_id=data.test_id,
-        score=score,
-        completed_at=datetime.now()
+        score=round(percentage_score, 2),
+        completed_at=datetime.utcnow(),
+        attempt_number=attempt_number
     ))
+
     session.commit()
-    return {"score": score}
+    return {"score": round(percentage_score, 2), "attempt": len(existing_attempts) + 1}
+
 
 
 @router.post("/{student_id}/classrooms")
@@ -171,3 +177,13 @@ def get_student_classrooms(student_id: int, session: Session = Depends(get_sessi
     )
     return session.exec(statement).all()
 
+
+@router.get("/tests/attempts/{test_id}")
+def get_attempt_count(test_id: int, session: Session = Depends(get_session), current_user=Depends(get_current_user)):
+    attempts = session.exec(
+        select(TestResult).where(
+            TestResult.student_id == current_user.id,
+            TestResult.test_id == test_id
+        )
+    ).all()
+    return {"attempt_count": len(attempts)}

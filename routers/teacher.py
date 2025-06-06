@@ -1,9 +1,11 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
 from database import get_session
 from dependencies import get_current_user
-from models import User, TestResult, Test, StudentTestAssignment, Question, ClassroomStudentLink, ClassroomTeacherLink, \
+from models import User, TestResult, Test, Question, ClassroomStudentLink, ClassroomTeacherLink, \
     Classroom, ClassroomTestAssignment
 from typing import List, Optional
 
@@ -15,12 +17,13 @@ class TestResultWithName(BaseModel):
     id: int
     test_id: int
     student_id: int
-    score: int
-    completed_at: Optional[str]
+    score: float
+    completed_at: str  # changed from datetime to str
     test_name: str
 
     class Config:
         orm_mode = True
+
 
 class TestResultOut(BaseModel):
     id: int
@@ -31,16 +34,26 @@ class TestResultOut(BaseModel):
     test_name: str
 
 
-class StudentTestAssignmentCreate(BaseModel):
-    test_id: int
-    student_id: int
-
-
-
 class ClassroomWithStudents(BaseModel):
     classroom_id: int
     classroom_name: str
     students: List[User]
+
+
+class TestCreate(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    is_timed: bool = False
+    duration_minutes: Optional[int] = None
+    max_attempts: Optional[int] = 1
+    available_from: Optional[datetime] = None
+    available_until: Optional[datetime] = None
+    is_published: bool = False
+    show_results_immediately: bool = True
+    allow_back_navigation: bool = True
+    shuffle_questions: bool = False
+    pass_score: Optional[float] = None
+    graded_by: str = "auto"
 
 
 router = APIRouter(prefix="/teacher", tags=["teacher"])
@@ -51,31 +64,6 @@ def teacher_required(user=Depends(get_current_user)):
     if user.role not in ["teacher", "admin"]:
         raise HTTPException(status_code=403, detail="Teachers or admin only")
     return user
-
-
-# Create a test
-@router.post("/tests", response_model=Test)
-def create_test(test: Test, session: Session = Depends(get_session), user: User = Depends(teacher_required)):
-    test.created_by = user.id
-    session.add(test)
-    session.commit()
-    session.refresh(test)
-    return test
-
-# Add questions to a test
-@router.post("/tests/{test_id}/questions", response_model=Question)
-def add_question(test_id: int, question: Question, session: Session = Depends(get_session), user: User = Depends(teacher_required)):
-    test = session.get(Test, test_id)
-    if not test:
-        raise HTTPException(status_code=404, detail="Test not found")
-    if test.created_by != user.id and user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized")
-    question.test_id = test_id
-    session.add(question)
-    session.commit()
-    session.refresh(question)
-    return question
-
 
 def get_current_teacher(
     x_user_id: Optional[int] = Header(None),
@@ -121,7 +109,6 @@ def get_assigned_students(
     return result
 
 
-
 @router.get("/student/{student_id}/history", response_model=List[TestResultWithName])
 def get_test_results(
     student_id: int,
@@ -151,10 +138,11 @@ def get_test_results(
             test_id=r.TestResult.test_id,
             student_id=r.TestResult.student_id,
             score=r.TestResult.score,
-            completed_at=r.TestResult.completed_at,
+            completed_at=r.TestResult.completed_at.isoformat(),  # fix here
             test_name=r.name,
         )
         for r in results
     ]
+
 
 

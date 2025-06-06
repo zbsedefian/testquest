@@ -6,9 +6,10 @@ from sqlalchemy import delete
 from sqlmodel import Session, select
 
 from dependencies import get_current_user
-from models import Classroom, ClassroomStudentLink, User, StudentTestAssignment, Test, ClassroomTeacherLink, \
-    ClassroomTestAssignment
+from models import Classroom, ClassroomStudentLink, User, Test, ClassroomTeacherLink, \
+    ClassroomTestAssignment, Question
 from database import get_session
+from routers.teacher import TestCreate
 
 router = APIRouter()
 
@@ -17,23 +18,71 @@ class TestClassroomAssignmentRequest(BaseModel):
     classroom_id: int
     test_id: int
 
+
 def admin_required(user: User = Depends(get_current_user)):
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admins only")
     return user
 
 
-@router.post("/tests/{test_id}/assign-to-classroom/{classroom_id}")
-def assign_test_to_classroom(test_id: int, classroom_id: int, session: Session = Depends(get_session)):
-    statement = select(ClassroomStudentLink).where(ClassroomStudentLink.classroom_id == classroom_id)
-    links = session.exec(statement).all()
-    if not links:
-        raise HTTPException(status_code=404, detail="No students in classroom.")
-    for link in links:
-        assignment = StudentTestAssignment(test_id=test_id, student_id=link.student_id)
-        session.add(assignment)
+@router.get("/tests/{test_id}", response_model=Test)
+def get_test(test_id: int, session: Session = Depends(get_session)):
+    test = session.get(Test, test_id)
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    return test
+
+
+@router.post("/tests")
+def create_test(
+    data: TestCreate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user)
+):
+    test = Test(**data.dict(), created_by=user.id)
+    session.add(test)
     session.commit()
-    return {"message": "Test assigned to all students in classroom."}
+    session.refresh(test)
+    return test
+
+
+@router.put("/tests/{test_id}", response_model=Test)
+def update_test(
+    test_id: int,
+    data: TestCreate,  # reuse TestCreate schema if fields are same
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    test = session.get(Test, test_id)
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+
+    # Optional: enforce permission
+    if test.created_by != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to update this test")
+
+    for field, value in data.dict().items():
+        setattr(test, field, value)
+
+    session.add(test)
+    session.commit()
+    session.refresh(test)
+    return test
+
+
+# Add questions to a test
+@router.post("/tests/{test_id}/questions", response_model=Question)
+def add_question(test_id: int, question: Question, session: Session = Depends(get_session), user: User = Depends(get_current_user)):
+    test = session.get(Test, test_id)
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    if test.created_by != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    question.test_id = test_id
+    session.add(question)
+    session.commit()
+    session.refresh(question)
+    return question
 
 
 @router.get("/tests", response_model=List[Test])
@@ -51,33 +100,27 @@ def get_all_tests(
         ).all()
         classroom_ids = [link.classroom_id for link in class_links]
 
-        # 2. Get all students in those classrooms
-        student_links = session.exec(
-            select(ClassroomStudentLink).where(ClassroomStudentLink.classroom_id.in_(classroom_ids))
+        # 2. Get all tests assigned to those classrooms
+        class_test_links = session.exec(
+            select(ClassroomTestAssignment).where(
+                ClassroomTestAssignment.classroom_id.in_(classroom_ids)
+            )
         ).all()
-        student_ids = [link.student_id for link in student_links]
+        assigned_test_ids = {link.test_id for link in class_test_links}
 
-        # 3. Get all tests assigned to those students
-        assigned_test_ids = session.exec(
-            select(StudentTestAssignment.test_id).where(StudentTestAssignment.student_id.in_(student_ids))
-        ).all()
-        assigned_test_ids = set(assigned_test_ids)  # <-- FIXED HERE
-
-        # 4. Also include tests created by the teacher
+        # 3. Also include tests created by the teacher
         created_tests = session.exec(
             select(Test).where(Test.created_by == user.id)
         ).all()
+        created_test_ids = {t.id for t in created_tests}
 
-        # 5. Combine both sets of test IDs
-        if assigned_test_ids:
-            assigned_tests = session.exec(
-                select(Test).where(Test.id.in_(assigned_test_ids))
-            ).all()
-        else:
-            assigned_tests = []
+        # 4. Combine and fetch unique tests
+        all_test_ids = assigned_test_ids.union(created_test_ids)
+        if not all_test_ids:
+            return []
 
-        all_tests = {t.id: t for t in created_tests + assigned_tests}
-        return list(all_tests.values())
+        tests = session.exec(select(Test).where(Test.id.in_(all_test_ids))).all()
+        return tests
 
     raise HTTPException(status_code=403, detail="Unauthorized role")
 
@@ -92,24 +135,9 @@ def assign_test_to_classroom(data: TestClassroomAssignmentRequest, session: Sess
     ).first()
     if not exists:
         session.add(ClassroomTestAssignment(classroom_id=data.classroom_id, test_id=data.test_id))
-
-    # Then assign to students
-    student_links = session.exec(
-        select(ClassroomStudentLink).where(ClassroomStudentLink.classroom_id == data.classroom_id)
-    ).all()
-    for link in student_links:
-        already = session.exec(
-            select(StudentTestAssignment)
-            .where(StudentTestAssignment.student_id == link.student_id)
-            .where(StudentTestAssignment.test_id == data.test_id)
-        ).first()
-        if not already:
-            session.add(StudentTestAssignment(
-                student_id=link.student_id,
-                test_id=data.test_id
-            ))
     session.commit()
     return {"message": "Assigned successfully"}
+
 
 @router.get("/tests/{test_id}/assigned-classrooms")
 def get_assigned_classrooms(test_id: int, session: Session = Depends(get_session), user: User = Depends(get_current_user)):
@@ -126,17 +154,5 @@ def unassign_test(data: TestClassroomAssignmentRequest, session: Session = Depen
         .where(ClassroomTestAssignment.test_id == data.test_id)
         .where(ClassroomTestAssignment.classroom_id == data.classroom_id)
     )
-    # Remove from student assignments
-    student_links = session.exec(
-        select(ClassroomStudentLink).where(ClassroomStudentLink.classroom_id == data.classroom_id)
-    ).all()
-    for link in student_links:
-        assignment = session.exec(
-            select(StudentTestAssignment)
-            .where(StudentTestAssignment.student_id == link.student_id)
-            .where(StudentTestAssignment.test_id == data.test_id)
-        ).first()
-        if assignment:
-            session.delete(assignment)
     session.commit()
     return {"message": "Unassigned successfully"}

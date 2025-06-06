@@ -24,6 +24,16 @@ class LoginResponse(BaseModel):
     username: str
     role: str
 
+class SignupRequest(BaseModel):
+    username: str
+    password: str
+    role: str  # "student", "teacher", or "admin"
+
+class SignupResponse(BaseModel):
+    id: int
+    username: str
+    role: str
+
 @router.post("/login", response_model=LoginResponse)
 def login(data: LoginRequest, session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.username == data.username)).first()
@@ -43,17 +53,6 @@ def login(data: LoginRequest, session: Session = Depends(get_session)):
 
     return LoginResponse(id=user.id, username=user.username, role=user.role)
 
-
-
-class SignupRequest(BaseModel):
-    username: str
-    password: str
-    role: str  # "student", "teacher", or "admin"
-
-class SignupResponse(BaseModel):
-    id: int
-    username: str
-    role: str
 
 @router.post("/signup", response_model=SignupResponse)
 def signup(data: SignupRequest, session: Session = Depends(get_session)):
