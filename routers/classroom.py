@@ -6,7 +6,8 @@ from sqlmodel import Session, select
 from starlette import status
 
 from dependencies import get_current_user
-from models import Classroom, ClassroomStudentLink, User, ClassroomTeacherLink, ClassroomTestAssignment, Test
+from models import Classroom, ClassroomStudentLink, User, ClassroomTeacherLink, ClassroomTestAssignment, Test, \
+    TestResult
 from database import get_session
 
 router = APIRouter()
@@ -352,3 +353,48 @@ def get_students_for_classroom(
     ).all()
 
     return [{"id": s.id, "username": s.username} for s in students]
+
+
+@router.get("/classroom/{classroom_id}/rankings")
+def get_classroom_rankings(classroom_id: int, session: Session = Depends(get_session), current_user=Depends(get_current_user)):
+    # 1. Get students in classroom
+    student_links = session.exec(
+        select(ClassroomStudentLink.student_id).where(ClassroomStudentLink.classroom_id == classroom_id)
+    ).all()
+    if not student_links:
+        return []
+
+    student_ids = [sid for sid in student_links]
+
+    # 2. Get all test results for these students
+    results = session.exec(
+        select(TestResult, User.username)
+        .join(User, TestResult.student_id == User.id)
+        .where(TestResult.student_id.in_(student_ids))
+    ).all()
+
+    # 3. Aggregate per student
+    student_scores = {}
+    for r, username in results:
+        if r.student_id not in student_scores:
+            student_scores[r.student_id] = {
+                "student_id": r.student_id,
+                "username": username,
+                "attempts": [],
+            }
+        student_scores[r.student_id]["attempts"].append({
+            "test_id": r.test_id,
+            "score": r.score,
+            "completed_at": r.completed_at.isoformat()
+        })
+
+    # 4. Calculate averages
+    ranked = []
+    for student in student_scores.values():
+        scores = [a["score"] for a in student["attempts"]]
+        student["average_score"] = round(sum(scores) / len(scores), 2)
+        ranked.append(student)
+
+    # 5. Sort by avg score descending
+    ranked.sort(key=lambda x: x["average_score"], reverse=True)
+    return ranked

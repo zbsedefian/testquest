@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from database import get_session
 from dependencies import get_current_user
-from models import User, Test
+from models import User, Test, TestResult
 
 
 class UserCreate(BaseModel):
@@ -165,3 +165,35 @@ def delete_user(
     session.commit()
     return None  # 204 No Content returns empty response
 
+
+@router.get("/rankings/top", tags=["admin"])
+def get_top_students(session: Session = Depends(get_session), user: User = Depends(get_current_user)):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+
+    results = session.exec(
+        select(TestResult, User.username)
+        .join(User, TestResult.student_id == User.id)
+    ).all()
+
+    student_scores = {}
+    for r, username in results:
+        if r.student_id not in student_scores:
+            student_scores[r.student_id] = {
+                "student_id": r.student_id,
+                "username": username,
+                "attempts": [],
+            }
+        student_scores[r.student_id]["attempts"].append(r.score)
+
+    leaderboard = []
+    for student in student_scores.values():
+        avg = sum(student["attempts"]) / len(student["attempts"])
+        leaderboard.append({
+            "student_id": student["student_id"],
+            "username": student["username"],
+            "average_score": round(avg, 2)
+        })
+
+    leaderboard.sort(key=lambda x: x["average_score"], reverse=True)
+    return leaderboard[:10]

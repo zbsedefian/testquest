@@ -157,29 +157,35 @@ def unassign_test(data: TestClassroomAssignmentRequest, session: Session = Depen
     session.commit()
     return {"message": "Unassigned successfully"}
 
+class Score(BaseModel):
+    score: int
+    completed_at: str
 
 class RankedResult(BaseModel):
     student_id: int
     username: str
-    score: float
+    score: List[Score]
 
 
-@router.get("/test/{test_id}/rankings", response_model=List[RankedResult])
-def get_test_rankings(test_id: int, session: Session = Depends(get_session), current_user=Depends(get_current_user)):
-    if current_user.role not in {"teacher", "admin"}:
-        raise HTTPException(status_code=403, detail="Only teachers or admins can view rankings.")
-
-    statement = (
+@router.get("/test/{test_id}/rankings")
+def get_test_rankings(test_id: int, session: Session = Depends(get_session)):
+    results = session.exec(
         select(TestResult, User.username)
-        .join(User, User.id == TestResult.student_id)
+        .join(User, TestResult.student_id == User.id)
         .where(TestResult.test_id == test_id)
-        .order_by(TestResult.score.desc())
-    )
+    ).all()
 
-    results = session.exec(statement).all()
+    student_scores = {}
+    for r, username in results:
+        if r.student_id not in student_scores:
+            student_scores[r.student_id] = {
+                "student_id": r.student_id,
+                "username": username,
+                "attempts": [],
+            }
+        student_scores[r.student_id]["attempts"].append({
+            "score": r.score,
+            "completed_at": r.completed_at.isoformat()
+        })
 
-    rankings = [
-        RankedResult(student_id=result.TestResult.student_id, username=result.username, score=result.TestResult.score)
-        for result in results
-    ]
-    return rankings
+    return list(student_scores.values())
