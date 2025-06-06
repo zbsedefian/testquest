@@ -70,10 +70,23 @@ def get_test_meta(test_id: int, session: Session = Depends(get_session)):
     return test
 
 
-@router.get("/test/{test_id}", response_model=List[Question])
-def get_test_questions(test_id: int, session: Session = Depends(get_session)):
-    statement = select(Question).where(Question.test_id == test_id).order_by(Question.order)
-    return session.exec(statement).all()
+@router.get("/test/{test_id}")
+def get_test_with_questions(test_id: int, session: Session = Depends(get_session)):
+    test = session.get(Test, test_id)
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+
+    questions = session.exec(
+        select(Question).where(Question.test_id == test_id).order_by(Question.order)
+    ).all()
+
+    return {
+        "id": test.id,
+        "name": test.name,
+        "duration_minutes": test.duration_minutes,
+        "is_timed": test.is_timed,
+        "questions": questions,
+    }
 
 @router.get("/test-results", response_model=List[TestResultWithName])
 def get_test_results(
@@ -135,7 +148,10 @@ def submit_test(
         ))
 
     # Final score as percentage
-    percentage_score = round((score / len(data.answers)) * 100)
+    if not data.answers:
+        percentage_score = 0
+    else:
+        percentage_score = round((score / len(data.answers)) * 100)
 
     # Save test result
     session.add(TestResult(
