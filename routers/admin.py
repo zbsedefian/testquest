@@ -174,6 +174,7 @@ def get_top_students(session: Session = Depends(get_session), user: User = Depen
     results = session.exec(
         select(TestResult, User.username)
         .join(User, TestResult.student_id == User.id)
+        .where(User.role == "student")
     ).all()
 
     student_scores = {}
