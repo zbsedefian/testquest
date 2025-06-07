@@ -3,8 +3,11 @@ from fastapi import FastAPI
 from routers import auth, student, teacher, admin, classroom, test
 import models
 from database import engine
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
+
+app.mount("/uploaded_images", StaticFiles(directory="/Users/xed/Downloads/uploaded_images"), name="uploaded_images")
 
 models.SQLModel.metadata.create_all(engine)
 

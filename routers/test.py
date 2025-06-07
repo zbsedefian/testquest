@@ -1,15 +1,18 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import delete
 from sqlmodel import Session, select
 
 from dependencies import get_current_user
-from models import Classroom, ClassroomStudentLink, User, Test, ClassroomTeacherLink, \
+from models import User, Test, ClassroomTeacherLink, \
     ClassroomTestAssignment, Question, TestResult
 from database import get_session
 from routers.teacher import TestCreate
+import shutil
+import os
+
 
 router = APIRouter()
 
@@ -189,3 +192,19 @@ def get_test_rankings(test_id: int, session: Session = Depends(get_session)):
         })
 
     return list(student_scores.values())
+
+
+UPLOAD_DIR = "/Users/xed/Downloads/uploaded_images"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@router.post("/upload-question-image")
+def upload_image(file: UploadFile = File(...)):
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # Return a local file path or mock URL (if not using public hosting)
+    return {"url": f"/uploaded_images/{file.filename}"}
+
+
+

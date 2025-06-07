@@ -45,6 +45,7 @@ class Question(SQLModel, table=True):
     correct_choice: str = Field(nullable=False)
     explanation: str = Field(nullable=False)
     requires_manual_grading: bool = Field(default=False, description="Set to true for essay/open questions")
+    image_url: Optional[str] = Field(default=None, description="Optional URL to image file")
 
 
 class StudentAnswer(SQLModel, table=True):
